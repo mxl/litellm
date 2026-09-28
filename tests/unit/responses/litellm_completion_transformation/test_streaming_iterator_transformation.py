@@ -1326,3 +1326,42 @@ async def test_plain_text_stream_announces_exactly_one_message_item(sync_mode: b
             ResponsesAPIStreamEvents.OUTPUT_TEXT_DONE,
         ):
             assert event.item_id == message_item_adds[0].item.id
+
+
+@pytest.mark.parametrize("sync_mode", [True, False])
+@pytest.mark.asyncio
+async def test_reasoning_streams_a_summary_part_added_before_text_deltas(sync_mode: bool):
+    iterator: Final = _build_iterator(
+        [
+            _reasoning_chunk("let me think"),
+            _reasoning_chunk(" harder"),
+            _chunk("Hello", finish_reason="stop"),
+        ]
+    )
+
+    events: Final = await _collect_events(iterator, sync_mode)
+
+    part_added: Final = [
+        event
+        for event in events
+        if getattr(event, "type", None) == "response.reasoning_summary_part.added"
+    ]
+    assert len(part_added) == 1
+    assert part_added[0].summary_index == 0
+
+    summary_deltas: Final = [
+        event
+        for event in events
+        if getattr(event, "type", None) == ResponsesAPIStreamEvents.REASONING_SUMMARY_TEXT_DELTA
+    ]
+    assert summary_deltas
+    reasoning_item_adds: Final = [
+        event
+        for event in events
+        if getattr(event, "type", None) == ResponsesAPIStreamEvents.OUTPUT_ITEM_ADDED
+        and getattr(event.item, "type", None) == "reasoning"
+    ]
+    assert reasoning_item_adds
+    for event in summary_deltas:
+        assert event.summary_index == 0
+        assert event.item_id == reasoning_item_adds[0].item.id
